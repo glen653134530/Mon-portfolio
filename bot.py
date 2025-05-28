@@ -56,11 +56,11 @@ async def recevoir_email(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Notification admin
   notif = (
     f"📩 NOUVEAU DEVIS\n"
-    f"Nom : {name}\n"
-    f"Email : {email}\n"
-    f"Service : {service}\n"
-    f"Budget : {budget}\n"
-    f"Message : {message}"
+    f"Nom : {data['name']}\n"
+    f"Email : {data['email']}\n"
+    f"Service : {data['service']}\n"
+    f"Budget : {data['budget']}\n"
+    f"Message : {data['message']}"
 )
     await context.bot.send_message(chat_id=ADMIN_ID, text=notif)
 
