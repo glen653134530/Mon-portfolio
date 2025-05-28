@@ -1,5 +1,4 @@
 
-
 import logging
 from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes, ConversationHandler
@@ -7,16 +6,14 @@ import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 from datetime import datetime
 
-# Initialisation de la connexion Google Sheets
+# Connexion à Google Sheets
 scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
 creds = ServiceAccountCredentials.from_json_keyfile_name("credentials.json", scope)
 client = gspread.authorize(creds)
 sheet = client.open("GT_WEB_Studio_Formulaire").worksheet("Devis")
 
-# États pour ConversationHandler
+# États
 SERVICE, BUDGET, DESCRIPTION, EMAIL = range(4)
-
-# ID de l'administrateur pour les notifications
 ADMIN_ID = 8142847766
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -49,19 +46,21 @@ async def recevoir_email(update: Update, context: ContextTypes.DEFAULT_TYPE):
     now = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
     data = [now, context.user_data["email"], context.user_data["service"],
             context.user_data["budget"], context.user_data["message"]]
-    sheet.append_row(data)
+
+    try:
+        sheet.append_row(data)
+    except Exception as e:
+        await update.message.reply_text("⚠️ Une erreur est survenue lors de l’envoi. Merci de réessayer.")
+        logging.error(f"Erreur Google Sheets : {e}")
+        return ConversationHandler.END
 
     await update.message.reply_text("✅ Votre demande de devis a été envoyée avec succès !")
 
-    # Notification admin
-  notif = (
-    f"📩 NOUVEAU DEVIS\n"
-    f"Nom : {data['name']}\n"
-    f"Email : {data['email']}\n"
-    f"Service : {data['service']}\n"
-    f"Budget : {data['budget']}\n"
-    f"Message : {data['message']}"
-)
+    notif = f"""📨 NOUVEAU DEVIS
+Email : {context.user_data['email']}
+Service : {context.user_data['service']}
+Budget : {context.user_data['budget']}"""
+
     await context.bot.send_message(chat_id=ADMIN_ID, text=notif)
 
     return ConversationHandler.END
@@ -80,7 +79,7 @@ if __name__ == '__main__':
             SERVICE: [MessageHandler(filters.TEXT & ~filters.COMMAND, recevoir_service)],
             BUDGET: [MessageHandler(filters.TEXT & ~filters.COMMAND, recevoir_budget)],
             DESCRIPTION: [MessageHandler(filters.TEXT & ~filters.COMMAND, recevoir_description)],
-            EMAIL: [MessageHandler(filters.TEXT & ~filters.COMMAND, recevoir_email)]
+            EMAIL: [MessageHandler(filters.TEXT & ~filters.COMMAND, recevoir_email)],
         },
         fallbacks=[CommandHandler("cancel", cancel)]
     )
