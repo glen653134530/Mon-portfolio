@@ -54,10 +54,7 @@ async def recevoir_email(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("✅ Votre demande de devis a été envoyée avec succès !")
 
     # Notification admin
-    notif = f"📨 NOUVEAU DEVIS
-Email : {context.user_data['email']}
-Service : {context.user_data['service']}
-Budget : {context.user_data['budget']}"
+  notif = f"📩 NOUVEAU DEVIS\nNom : {name}\nEmail : {email}\nService : {service}\nBudget : {budget}\nMessage : {message}"
     await context.bot.send_message(chat_id=ADMIN_ID, text=notif)
 
     return ConversationHandler.END
