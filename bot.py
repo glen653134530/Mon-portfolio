@@ -1,64 +1,84 @@
-import os
+
 import logging
-import telebot
-import requests
 import openai
-from dotenv import load_dotenv
-load_dotenv()
+import os
+from telegram import Update, ReplyKeyboardMarkup
+from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes, ConversationHandler
 
-BOT_TOKEN = os.getenv("BOT_TOKEN")
-ADMIN_ID = int(os.getenv("ADMIN_ID"))
-GOOGLE_SCRIPT_URL = os.getenv("GOOGLE_SCRIPT_URL")
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+# Configure ton token ici
+BOT_TOKEN = "TON_BOT_TOKEN_ICI"
+OPENAI_API_KEY = "TA_CLE_API_OPENAI_ICI"
+ADMIN_ID = 8142847766
 
-bot = telebot.TeleBot(BOT_TOKEN)
 openai.api_key = OPENAI_API_KEY
 
-@bot.message_handler(commands=["start"])
-def handle_start(message):
-    bot.reply_to(message, """Bienvenue chez GT Web Studio !
+# Config log
+logging.basicConfig(level=logging.INFO)
 
-Envoyez /devis pour demander un devis
-Envoyez /rdv pour prendre un rendez-vous
-Envoyez /ask pour une question IA""")
+# Commande /start
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    keyboard = [
+        ["📋 Nos Services", "📦 Demander un devis"],
+        ["📅 Prendre rendez-vous", "✉️ Contacter un humain"]
+    ]
+    reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+    await update.message.reply_text(
+        "Bienvenue chez GT Web Studio !\n\n"
+        "Envoyez /devis pour demander un devis\n"
+        "Envoyez /rdv pour prendre un rendez-vous\n"
+        "Envoyez /ask pour une question IA",
+        reply_markup=reply_markup
+    )
 
-@bot.message_handler(commands=["devis"])
-def demander_devis(message):
-    msg = bot.send_message(message.chat.id, "Quel service vous intéresse ?")
-    bot.register_next_step_handler(msg, lambda m: fin_devis(message, m.text))
+# Commande IA
+async def ask(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("Posez votre question à l'IA :")
+    return 1
 
-def fin_devis(orig_msg, service):
-    data = {"Nom": orig_msg.from_user.first_name, "Service": service}
-    requests.post(GOOGLE_SCRIPT_URL, data=data)
-    bot.send_message(orig_msg.chat.id, "✅ Demande de devis envoyée !")
-    bot.send_message(ADMIN_ID, f"🔔 Nouvelle demande de devis : {data}")
-
-@bot.message_handler(commands=["rdv"])
-def prendre_rdv(message):
-    msg = bot.send_message(message.chat.id, "Pour quel jour souhaitez-vous un RDV ?")
-    bot.register_next_step_handler(msg, lambda m: fin_rdv(message, m.text))
-
-def fin_rdv(orig_msg, jour):
-    data = {"Nom": orig_msg.from_user.first_name, "Rendez-vous": jour}
-    requests.post(GOOGLE_SCRIPT_URL, data=data)
-    bot.send_message(orig_msg.chat.id, "✅ Rendez-vous pris en compte !")
-    bot.send_message(ADMIN_ID, f"📅 Nouveau RDV demandé : {data}")
-
-@bot.message_handler(commands=["ask"])
-def ask_ai(message):
-    msg = bot.send_message(message.chat.id, "Posez votre question à l'IA :")
-    bot.register_next_step_handler(msg, lambda m: ai_response(message, m.text))
-
-def ai_response(orig_msg, question):
+async def ai_response(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_input = update.message.text
     try:
-        response = openai.ChatCompletion.create(
+        completion = openai.chat.completions.create(
             model="gpt-3.5-turbo",
-            messages=[{"role": "user", "content": question}]
+            messages=[{"role": "user", "content": user_input}]
         )
-        answer = response["choices"][0]["message"]["content"]
-        bot.send_message(orig_msg.chat.id, answer)
+        await update.message.reply_text(completion.choices[0].message.content)
     except Exception as e:
-        bot.send_message(orig_msg.chat.id, "Erreur IA.")
-        bot.send_message(ADMIN_ID, f"Erreur IA: {e}")
+        await update.message.reply_text(f"Erreur IA:\n{e}")
+    return ConversationHandler.END
 
-bot.polling()
+# Commande /devis
+async def devis(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("Envoyez votre demande de devis (Nom, Email, Service, Budget, Message).")
+    return ConversationHandler.END
+
+# Commande /rdv
+async def rdv(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("Envoyez vos infos de RDV (Nom, Projet, Date, Heure).")
+    return ConversationHandler.END
+
+# Commande /contacter
+async def contacter(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("Un humain sera notifié. Nous vous répondrons rapidement.")
+    await context.bot.send_message(chat_id=ADMIN_ID, text=f"👤 Un utilisateur demande de l'aide : {update.effective_user.first_name}")
+    return ConversationHandler.END
+
+# Lancer le bot
+def main():
+    app = ApplicationBuilder().token(BOT_TOKEN).build()
+
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("devis", devis))
+    app.add_handler(CommandHandler("rdv", rdv))
+    app.add_handler(CommandHandler("contacter", contacter))
+
+    app.add_handler(ConversationHandler(
+        entry_points=[CommandHandler("ask", ask)],
+        states={1: [MessageHandler(filters.TEXT & ~filters.COMMAND, ai_response)]},
+        fallbacks=[]
+    ))
+
+    app.run_polling()
+
+if __name__ == "__main__":
+    main()
