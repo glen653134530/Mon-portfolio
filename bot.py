@@ -1,150 +1,64 @@
-import logging
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup
-from telegram.ext import (
-    ApplicationBuilder, CommandHandler, MessageHandler, CallbackQueryHandler,
-    ConversationHandler, ContextTypes, filters
-)
 import os
+import logging
+import telebot
+import requests
+import openai
+from dotenv import load_dotenv
+load_dotenv()
 
-# === Configuration ===
-TOKEN = os.environ.get("BOT_TOKEN")  # Utilisé sur Render via variables d’environnement
-ADMIN_ID = int(os.environ.get("ADMIN_ID", "8142847766"))
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+ADMIN_ID = int(os.getenv("ADMIN_ID"))
+GOOGLE_SCRIPT_URL = os.getenv("GOOGLE_SCRIPT_URL")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
-# === Données ===
-services = [
-    "🔹 Création de sites web",
-    "🔹 Développement d’applications mobiles",
-    "🔹 Gestion de réseaux sociaux",
-    "🔹 Conception d’affiches et visuels pro",
-    "🔹 Montage vidéo",
-    "🔹 Création de boutiques e-commerce",
-    "🔹 Référencement SEO/SEA",
-    "🔹 Maintenance & sécurité"
-]
+bot = telebot.TeleBot(BOT_TOKEN)
+openai.api_key = OPENAI_API_KEY
 
-descriptions = [
-    "Sites web modernes, professionnels et 100% adaptés à vos besoins.",
-    "Applications mobiles Android/iOS performantes et intuitives.",
-    "Animation, contenu et croissance de vos réseaux sociaux.",
-    "Affiches, flyers et visuels pro pour booster votre image.",
-    "Montage de vidéos professionnelles pour tous vos projets.",
-    "Boutiques e-commerce avec panier, paiement, et interface admin.",
-    "Positionnement Google (SEO) et campagnes sponsorisées (SEA).",
-    "Sécurité, mises à jour et bon fonctionnement de vos sites/apps."
-]
+@bot.message_handler(commands=["start"])
+def handle_start(message):
+    bot.reply_to(message, "Bienvenue chez GT Web Studio !
 
-# === États de conversation ===
-DEVIS_SERVICE, DEVIS_BUDGET, DEVIS_EMAIL, RDV_DATE, RDV_HEURE = range(5)
+Envoyez /devis pour demander un devis
+Envoyez /rdv pour prendre un rendez-vous
+Envoyez /ask pour une question IA")
 
-# === Menus ===
-menu_keyboard = ReplyKeyboardMarkup([
-    ["📋 Voir les services", "📦 Demander un devis"],
-    ["📅 Prendre rendez-vous", "💬 Contacter un conseiller"]
-], resize_keyboard=True)
+@bot.message_handler(commands=["devis"])
+def demander_devis(message):
+    msg = bot.send_message(message.chat.id, "Quel service vous intéresse ?")
+    bot.register_next_step_handler(msg, lambda m: fin_devis(message, m.text))
 
-# === Handlers ===
+def fin_devis(orig_msg, service):
+    data = {"Nom": orig_msg.from_user.first_name, "Service": service}
+    requests.post(GOOGLE_SCRIPT_URL, data=data)
+    bot.send_message(orig_msg.chat.id, "✅ Demande de devis envoyée !")
+    bot.send_message(ADMIN_ID, f"🔔 Nouvelle demande de devis : {data}")
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Bienvenue chez GT Web Studio 👋\nChoisissez une option :", reply_markup=menu_keyboard)
+@bot.message_handler(commands=["rdv"])
+def prendre_rdv(message):
+    msg = bot.send_message(message.chat.id, "Pour quel jour souhaitez-vous un RDV ?")
+    bot.register_next_step_handler(msg, lambda m: fin_rdv(message, m.text))
 
-async def voir_services(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    keyboard = [[InlineKeyboardButton(service, callback_data=str(i))] for i, service in enumerate(services)]
-    await update.message.reply_text("💼 Voici nos services :", reply_markup=InlineKeyboardMarkup(keyboard))
+def fin_rdv(orig_msg, jour):
+    data = {"Nom": orig_msg.from_user.first_name, "Rendez-vous": jour}
+    requests.post(GOOGLE_SCRIPT_URL, data=data)
+    bot.send_message(orig_msg.chat.id, "✅ Rendez-vous pris en compte !")
+    bot.send_message(ADMIN_ID, f"📅 Nouveau RDV demandé : {data}")
 
-async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    index = int(query.data)
-    await query.edit_message_text(f"{services[index]}\n\n{descriptions[index]}")
+@bot.message_handler(commands=["ask"])
+def ask_ai(message):
+    msg = bot.send_message(message.chat.id, "Posez votre question à l'IA :")
+    bot.register_next_step_handler(msg, lambda m: ai_response(message, m.text))
 
-async def contacter_conseiller(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user = update.effective_user
-    await context.bot.send_message(chat_id=ADMIN_ID, text=f"📩 Un utilisateur veut vous contacter : @{user.username or user.id}")
-    await update.message.reply_text("✅ Un conseiller va vous répondre rapidement.", reply_markup=menu_keyboard)
+def ai_response(orig_msg, question):
+    try:
+        response = openai.ChatCompletion.create(
+            model="gpt-3.5-turbo",
+            messages=[{"role": "user", "content": question}]
+        )
+        answer = response["choices"][0]["message"]["content"]
+        bot.send_message(orig_msg.chat.id, answer)
+    except Exception as e:
+        bot.send_message(orig_msg.chat.id, "Erreur IA.")
+        bot.send_message(ADMIN_ID, f"Erreur IA: {e}")
 
-# === Demander un devis ===
-async def demander_devis(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Quel service souhaitez-vous ?")
-    return DEVIS_SERVICE
-
-async def devis_service(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    context.user_data["service"] = update.message.text
-    await update.message.reply_text("Quel est votre budget estimé ?")
-    return DEVIS_BUDGET
-
-async def devis_budget(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    context.user_data["budget"] = update.message.text
-    await update.message.reply_text("Entrez votre email de contact :")
-    return DEVIS_EMAIL
-
-async def devis_email(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    email = update.message.text
-    context.user_data["email"] = email
-
-    msg = f"""📦 NOUVEAU DEVIS
-Service : {context.user_data['service']}
-Budget : {context.user_data['budget']}
-Email : {email}"""
-
-    await context.bot.send_message(ADMIN_ID, msg)
-    await update.message.reply_text("Merci ! Votre demande a été transmise ✅", reply_markup=menu_keyboard)
-    return ConversationHandler.END
-
-# === Prendre rendez-vous ===
-async def prendre_rdv(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Quel jour souhaitez-vous ? (ex : 2025-06-25)")
-    return RDV_DATE
-
-async def rdv_date(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    context.user_data["date"] = update.message.text
-    await update.message.reply_text("À quelle heure ? (ex : 14h00)")
-    return RDV_HEURE
-
-async def rdv_heure(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    context.user_data["heure"] = update.message.text
-    msg = f"📅 Nouveau RDV demandé : {context.user_data['date']} à {context.user_data['heure']}"
-    await context.bot.send_message(ADMIN_ID, msg)
-    await update.message.reply_text("Votre rendez-vous a été transmis ✅", reply_markup=menu_keyboard)
-    return ConversationHandler.END
-
-# === Annulation ===
-async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("❌ Opération annulée.", reply_markup=menu_keyboard)
-    return ConversationHandler.END
-
-# === Lancement de l’application ===
-async def main():
-    logging.basicConfig(level=logging.INFO)
-    app = ApplicationBuilder().token(TOKEN).build()
-
-    # Handlers
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(MessageHandler(filters.Regex("^📋 Voir les services$"), voir_services))
-    app.add_handler(MessageHandler(filters.Regex("^💬 Contacter un conseiller$"), contacter_conseiller))
-    app.add_handler(CallbackQueryHandler(button_handler))
-
-    app.add_handler(ConversationHandler(
-        entry_points=[MessageHandler(filters.Regex("^📦 Demander un devis$"), demander_devis)],
-        states={
-            DEVIS_SERVICE: [MessageHandler(filters.TEXT & ~filters.COMMAND, devis_service)],
-            DEVIS_BUDGET: [MessageHandler(filters.TEXT & ~filters.COMMAND, devis_budget)],
-            DEVIS_EMAIL: [MessageHandler(filters.TEXT & ~filters.COMMAND, devis_email)],
-        },
-        fallbacks=[CommandHandler("cancel", cancel)]
-    ))
-
-    app.add_handler(ConversationHandler(
-        entry_points=[MessageHandler(filters.Regex("^📅 Prendre rendez-vous$"), prendre_rdv)],
-        states={
-            RDV_DATE: [MessageHandler(filters.TEXT & ~filters.COMMAND, rdv_date)],
-            RDV_HEURE: [MessageHandler(filters.TEXT & ~filters.COMMAND, rdv_heure)],
-        },
-        fallbacks=[CommandHandler("cancel", cancel)]
-    ))
-
-    await app.run_polling()
-
-# === Point d'entrée ===
-if __name__ == "__main__":
-    import asyncio
-    asyncio.run(main())
+bot.polling()
