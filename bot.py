@@ -20,7 +20,7 @@ def handle_start(message):
 
 Envoyez /devis pour demander un devis
 Envoyez /rdv pour prendre un rendez-vous
-Envoyez /ask pour une question IA")"""
+Envoyez /ask pour une question IA""")
 
 @bot.message_handler(commands=["devis"])
 def demander_devis(message):
