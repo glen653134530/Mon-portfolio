@@ -1,92 +1,52 @@
-
 import logging
-from telegram import Update, ReplyKeyboardMarkup
-from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes, ConversationHandler
-import requests
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, CallbackQueryHandler, ContextTypes
 
-# Configuration du logging
-logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO)
+TOKEN = "YOUR_BOT_TOKEN_HERE"
+ADMIN_ID = 8142847766
 
-# URL de votre script Google Apps Script
-GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxOL8N8XOrKpGaNJWkIO9n_t9Q8rdBBR_CDh4ssgIPmxujXqv46NtyfN4PEquDWG7tTZg/exec"
+services = [
+    "🔹 Création de sites web",
+    "🔹 Développement d’applications mobiles",
+    "🔹 Gestion de réseaux sociaux",
+    "🔹 Conception d’affiches et visuels pro",
+    "🔹 Montage vidéo",
+    "🔹 Création de boutiques e-commerce",
+    "🔹 Référencement SEO/SEA",
+    "🔹 Maintenance & sécurité"
+]
 
-# Étapes de la conversation
-NAME, EMAIL, SERVICE, BUDGET, MESSAGE = range(5)
+descriptions = [
+    "Nous concevons des sites web modernes, professionnels et 100% adaptés à vos besoins.",
+    "Nous développons des applications mobiles performantes et intuitives pour Android et iOS.",
+    "Confiez-nous vos pages : nous assurons contenu, animation et croissance des abonnés.",
+    "Des visuels haut de gamme pour booster votre image (affiches, flyers, réseaux...).",
+    "Montage de vidéos de qualité pro pour vos projets, pubs, teasers ou réseaux sociaux.",
+    "Lancez votre boutique en ligne avec un design pro, panier, paiement et interface admin.",
+    "Optimisez votre visibilité avec un bon positionnement Google (SEO) et des campagnes sponsorisées (SEA).",
+    "Assurez la sécurité, les mises à jour et le bon fonctionnement de votre site/app."
+]
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    keyboard = [
-        ["📋 Nos Services", "📦 Demander un devis"],
-        ["📅 Prendre rendez-vous", "✉️ Contacter un humain"]
-    ]
-    reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
-    await update.message.reply_text("Bienvenue chez GT Web Studio. Que souhaitez-vous faire ?", reply_markup=reply_markup)
+    keyboard = [[InlineKeyboardButton(service, callback_data=str(i))] for i, service in enumerate(services)]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await update.message.reply_text("Bienvenue chez GT Web Studio !
 
-async def ask_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Quel est votre nom ?")
-    return NAME
+💼 Voici nos services :", reply_markup=reply_markup)
 
-async def ask_email(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    context.user_data["name"] = update.message.text
-    await update.message.reply_text("Quel est votre adresse e-mail ?")
-    return EMAIL
+async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    index = int(query.data)
+    response = f"{services[index]}\n\n{descriptions[index]}"
+    await query.edit_message_text(text=response)
 
-async def ask_service(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    context.user_data["email"] = update.message.text
-    await update.message.reply_text("Quel service vous intéresse ?")
-    return SERVICE
-
-async def ask_budget(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    context.user_data["service"] = update.message.text
-    await update.message.reply_text("Quel est votre budget ?")
-    return BUDGET
-
-async def ask_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    context.user_data["budget"] = update.message.text
-    await update.message.reply_text("Ajoutez un message complémentaire :")
-    return MESSAGE
-
-async def submit_form(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    context.user_data["message"] = update.message.text
-
-    data = {
-        "Nom": context.user_data["name"],
-        "Email": context.user_data["email"],
-        "Service": context.user_data["service"],
-        "Budget": context.user_data["budget"],
-        "Message": context.user_data["message"]
-    }
-
-    response = requests.post(GOOGLE_SCRIPT_URL, data=data)
-
-    if response.status_code == 200:
-        await update.message.reply_text("✅ Votre demande a été envoyée avec succès. Nous vous répondrons très vite !")
-    else:
-        await update.message.reply_text("❌ Une erreur s'est produite lors de l'envoi. Veuillez réessayer.")
-
-    return ConversationHandler.END
-
-async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("❌ Formulaire annulé.")
-    return ConversationHandler.END
+async def main():
+    application = ApplicationBuilder().token(TOKEN).build()
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(CallbackQueryHandler(button_handler))
+    await application.run_polling()
 
 if __name__ == "__main__":
-    import os
-    TOKEN = os.getenv("BOT_TOKEN")
-    app = ApplicationBuilder().token(TOKEN).build()
-
-    form_handler = ConversationHandler(
-        entry_points=[MessageHandler(filters.Regex("^📦 Demander un devis$"), ask_name)],
-        states={
-            NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, ask_email)],
-            EMAIL: [MessageHandler(filters.TEXT & ~filters.COMMAND, ask_service)],
-            SERVICE: [MessageHandler(filters.TEXT & ~filters.COMMAND, ask_budget)],
-            BUDGET: [MessageHandler(filters.TEXT & ~filters.COMMAND, ask_message)],
-            MESSAGE: [MessageHandler(filters.TEXT & ~filters.COMMAND, submit_form)]
-        },
-        fallbacks=[CommandHandler("cancel", cancel)]
-    )
-
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(form_handler)
-
-    app.run_polling()
+    import asyncio
+    asyncio.run(main())
