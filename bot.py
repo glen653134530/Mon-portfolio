@@ -2,89 +2,91 @@
 import logging
 from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes, ConversationHandler
-import gspread
-from oauth2client.service_account import ServiceAccountCredentials
-from datetime import datetime
+import requests
 
-# Connexion à Google Sheets
-scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-creds = ServiceAccountCredentials.from_json_keyfile_name("credentials.json", scope)
-client = gspread.authorize(creds)
-sheet = client.open("GT_WEB_Studio_Formulaire").worksheet("Devis")
+# Configuration du logging
+logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO)
 
-# États
-SERVICE, BUDGET, DESCRIPTION, EMAIL = range(4)
-ADMIN_ID = 8142847766
+# URL de votre script Google Apps Script
+GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxOL8N8XOrKpGaNJWkIO9n_t9Q8rdBBR_CDh4ssgIPmxujXqv46NtyfN4PEquDWG7tTZg/exec"
+
+# Étapes de la conversation
+NAME, EMAIL, SERVICE, BUDGET, MESSAGE = range(5)
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    keyboard = [["📋 Nos Services", "📦 Demander un devis"],
-                ["📅 Prendre rendez-vous", "✉️ Contacter un humain"]]
+    keyboard = [
+        ["📋 Nos Services", "📦 Demander un devis"],
+        ["📅 Prendre rendez-vous", "✉️ Contacter un humain"]
+    ]
     reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
-    await update.message.reply_text("Bienvenue sur le bot GT Web Studio 👋", reply_markup=reply_markup)
+    await update.message.reply_text("Bienvenue chez GT Web Studio. Que souhaitez-vous faire ?", reply_markup=reply_markup)
 
-async def demander_devis(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Quel service souhaitez-vous ?")
+async def ask_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("Quel est votre nom ?")
+    return NAME
+
+async def ask_email(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    context.user_data["name"] = update.message.text
+    await update.message.reply_text("Quel est votre adresse e-mail ?")
+    return EMAIL
+
+async def ask_service(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    context.user_data["email"] = update.message.text
+    await update.message.reply_text("Quel service vous intéresse ?")
     return SERVICE
 
-async def recevoir_service(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def ask_budget(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["service"] = update.message.text
     await update.message.reply_text("Quel est votre budget ?")
     return BUDGET
 
-async def recevoir_budget(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def ask_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["budget"] = update.message.text
-    await update.message.reply_text("Décrivez votre besoin en quelques lignes.")
-    return DESCRIPTION
+    await update.message.reply_text("Ajoutez un message complémentaire :")
+    return MESSAGE
 
-async def recevoir_description(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def submit_form(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["message"] = update.message.text
-    await update.message.reply_text("Merci ! Enfin, indiquez votre adresse email.")
-    return EMAIL
 
-async def recevoir_email(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    context.user_data["email"] = update.message.text
-    now = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
-    data = [now, context.user_data["email"], context.user_data["service"],
-            context.user_data["budget"], context.user_data["message"]]
+    data = {
+        "Nom": context.user_data["name"],
+        "Email": context.user_data["email"],
+        "Service": context.user_data["service"],
+        "Budget": context.user_data["budget"],
+        "Message": context.user_data["message"]
+    }
 
-    try:
-        sheet.append_row(data)
-    except Exception as e:
-        await update.message.reply_text("⚠️ Une erreur est survenue lors de l’envoi. Merci de réessayer.")
-        logging.error(f"Erreur Google Sheets : {e}")
-        return ConversationHandler.END
+    response = requests.post(GOOGLE_SCRIPT_URL, data=data)
 
-    await update.message.reply_text("✅ Votre demande de devis a été envoyée avec succès !")
-
-    notif = f"""📨 NOUVEAU DEVIS
-Email : {context.user_data['email']}
-Service : {context.user_data['service']}
-Budget : {context.user_data['budget']}"""
-
-    await context.bot.send_message(chat_id=ADMIN_ID, text=notif)
+    if response.status_code == 200:
+        await update.message.reply_text("✅ Votre demande a été envoyée avec succès. Nous vous répondrons très vite !")
+    else:
+        await update.message.reply_text("❌ Une erreur s'est produite lors de l'envoi. Veuillez réessayer.")
 
     return ConversationHandler.END
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("❌ Opération annulée.")
+    await update.message.reply_text("❌ Formulaire annulé.")
     return ConversationHandler.END
 
-if __name__ == '__main__':
-    logging.basicConfig(level=logging.INFO)
-    app = ApplicationBuilder().token("8055069091:AAGhJNc7IlnGSf563DXAKobROUmGgnmFg_o").build()
+if __name__ == "__main__":
+    import os
+    TOKEN = os.getenv("BOT_TOKEN")
+    app = ApplicationBuilder().token(TOKEN).build()
 
-    conv_handler = ConversationHandler(
-        entry_points=[MessageHandler(filters.Regex("^(📦 Demander un devis)$"), demander_devis)],
+    form_handler = ConversationHandler(
+        entry_points=[MessageHandler(filters.Regex("^📦 Demander un devis$"), ask_name)],
         states={
-            SERVICE: [MessageHandler(filters.TEXT & ~filters.COMMAND, recevoir_service)],
-            BUDGET: [MessageHandler(filters.TEXT & ~filters.COMMAND, recevoir_budget)],
-            DESCRIPTION: [MessageHandler(filters.TEXT & ~filters.COMMAND, recevoir_description)],
-            EMAIL: [MessageHandler(filters.TEXT & ~filters.COMMAND, recevoir_email)],
+            NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, ask_email)],
+            EMAIL: [MessageHandler(filters.TEXT & ~filters.COMMAND, ask_service)],
+            SERVICE: [MessageHandler(filters.TEXT & ~filters.COMMAND, ask_budget)],
+            BUDGET: [MessageHandler(filters.TEXT & ~filters.COMMAND, ask_message)],
+            MESSAGE: [MessageHandler(filters.TEXT & ~filters.COMMAND, submit_form)]
         },
         fallbacks=[CommandHandler("cancel", cancel)]
     )
 
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(conv_handler)
+    app.add_handler(form_handler)
 
     app.run_polling()
