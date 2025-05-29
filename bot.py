@@ -39,11 +39,11 @@ async def send_welcome(message: types.Message):
 # --- Nos Services ---
 @dp.message_handler(lambda message: message.text == "📋 Nos Services")
 async def services(message: types.Message):
-    await message.reply("💻 Création de site web
+    await message.reply("""💻 Création de site web
 📱 App mobile
 🎨 Graphisme & logo
 📲 Gestion réseaux sociaux
-🎬 Vidéo/Montage")
+🎬 Vidéo/Montage""")
 
 # --- Demander un devis ---
 @dp.message_handler(lambda message: message.text == "📦 Demander un devis")
