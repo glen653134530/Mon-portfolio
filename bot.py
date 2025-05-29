@@ -3,9 +3,8 @@ from aiogram import Bot, Dispatcher, executor, types
 import requests
 
 API_URL = "https://api-inference.huggingface.co/models/google/flan-t5-small"
-
-BOT_TOKEN = "TON_BOT_TOKEN_ICI"
-ADMIN_ID = "TON_ADMIN_ID"
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+ADMIN_ID = os.getenv("ADMIN_ID")
 SHEET_URL = "https://script.google.com/macros/s/AKfycbxOL8N8XOrKpGaNJWkIO9n_t9Q8rdBBR_CDh4ssgIPmxujXqv46NtyfN4PEquDWG7tTZg/exec"
 
 logging.basicConfig(level=logging.INFO)
