@@ -16,11 +16,11 @@ openai.api_key = OPENAI_API_KEY
 
 @bot.message_handler(commands=["start"])
 def handle_start(message):
-    bot.reply_to(message, "Bienvenue chez GT Web Studio !
+    bot.reply_to(message, """Bienvenue chez GT Web Studio !
 
 Envoyez /devis pour demander un devis
 Envoyez /rdv pour prendre un rendez-vous
-Envoyez /ask pour une question IA")
+Envoyez /ask pour une question IA")"""
 
 @bot.message_handler(commands=["devis"])
 def demander_devis(message):
